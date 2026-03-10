@@ -430,7 +430,7 @@
   </div>
   <div class="topbar-right">
     <div class="status-dot"></div>
-    <div class="status-label">Gemini 3.1 Flash Lite</div>
+    <div class="status-label">Gemini 2.5 Flash Lite</div>
   </div>
 </div>
 
@@ -656,7 +656,7 @@ Also provide:
 Respond ONLY with valid JSON, no markdown, no explanation:
 {"candidate_name":"","email":"","phone":"","location":"","total_experience":0,"overall_score":0,"skills_match":0,"experience_years":0,"education_level":0,"jd_match":0,"strengths":[],"gaps":[],"summary":""}`;
 
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${apiKey}`, {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -795,7 +795,10 @@ function renderResults() {
 
 
 function exportContacts() {
-  const headers = ['Rank','Name','Phone Number','Email ID','Location','Total Experience (yrs)','AI Score'];
+  const headers = [
+    'Rank','Name','Phone Number','Email ID','Location','Total Experience (yrs)',
+    'AI Score','Skills Score','Experience Score','Education Score','JD Match Score','AI Comment'
+  ];
   const rows = results.map((r, i) => [
     i+1,
     '"' + (r.candidate_name||'').replace(/"/g,'""') + '"',
@@ -803,7 +806,12 @@ function exportContacts() {
     '"' + (r.email||'').replace(/"/g,'""') + '"',
     '"' + (r.location||'').replace(/"/g,'""') + '"',
     r.total_experience||0,
-    r.overall_score
+    r.overall_score,
+    r.skills_match||0,
+    r.experience_years||0,
+    r.education_level||0,
+    r.jd_match||0,
+    '"' + (r.summary||'').replace(/"/g,'""') + '"'
   ]);
   const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
