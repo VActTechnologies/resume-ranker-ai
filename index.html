@@ -627,41 +627,44 @@ async function extractText(file) {
   }
 }
 
-async function scoreResume(apiKey, jobDesc, resumeText, filename) {
-  const prompt = `You are an expert HR analyst. Score this resume for the given job description.
+async function scoreResumeBatch(apiKey, jobDesc, batch) {
+  // batch = [{text, filename}, {text, filename}, ...]
+  const resumeBlocks = batch.map((r, i) => `RESUME ${i+1} (filename: ${r.filename}):
+${r.text.slice(0, 12000)}`).join('\n\n---\n\n');
+
+  const prompt = `You are an expert HR analyst. Score each resume below for the given job description.
 
 JOB DESCRIPTION:
 ${jobDesc}
 
-RESUME (filename: ${filename}):
-${resumeText.slice(0, 12000)}
+${resumeBlocks}
 
-Score the resume across these 4 dimensions (each 0-100):
+For EACH resume, score across these 4 dimensions (each 0-100):
 1. skills_match - How well do the candidate's technical/professional skills match the JD?
 2. experience_years - How appropriate is the years and depth of experience?
 3. education_level - How well does the educational background fit the role?
 4. jd_match - Overall alignment with the job description requirements?
 
-Also provide:
+Also extract per resume:
 - overall_score: weighted average (skills 35%, jd_match 35%, experience 20%, education 10%)
 - candidate_name: extract full name from resume or use filename if not found
-- email: extract email address from resume, or empty string if not found
-- phone: extract phone number from resume. Look for patterns like +91 XXXXX XXXXX, (XXX) XXX-XXXX, XXX-XXX-XXXX, or any sequence of 10+ digits with optional country code. Return the number exactly as written in the resume. Return empty string if not found.
-- location: extract city/country from resume, or empty string if not found
-- total_experience: extract total years of experience as a number (e.g. 5), or 0 if not found
-- strengths: array of 2-3 short strength tags (e.g. "5yr Python", "ML background")
-- gaps: array of 1-2 short gap tags (e.g. "No cloud exp", "Junior level")
-- summary: 1-2 sentence summary of the candidate's fit
+- email: extract email address, or empty string if not found
+- phone: extract phone number. Look for patterns like +91 XXXXX XXXXX, (XXX) XXX-XXXX, XXX-XXX-XXXX, or any sequence of 10+ digits with optional country code. Return exactly as written. Empty string if not found.
+- location: extract city/country, or empty string if not found
+- total_experience: total years of experience as a number, or 0 if not found
+- strengths: array of 2-3 short strength tags
+- gaps: array of 1-2 short gap tags
+- summary: 1-2 sentence summary of fit
 
-Respond ONLY with valid JSON, no markdown, no explanation:
-{"candidate_name":"","email":"","phone":"","location":"","total_experience":0,"overall_score":0,"skills_match":0,"experience_years":0,"education_level":0,"jd_match":0,"strengths":[],"gaps":[],"summary":""}`;
+Respond ONLY with a valid JSON array with one object per resume, no markdown, no explanation:
+[{"candidate_name":"","email":"","phone":"","location":"","total_experience":0,"overall_score":0,"skills_match":0,"experience_years":0,"education_level":0,"jd_match":0,"strengths":[],"gaps":[],"summary":""}]`;
 
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 512 }
+      generationConfig: { temperature: 0.2, maxOutputTokens: 2048 }
     })
   });
 
@@ -696,11 +699,19 @@ async function runAnalysis() {
     document.getElementById('progressStatus').textContent = msg;
   };
 
-  const BATCH_SIZE = 10;
+  const CHUNK_SIZE = 3;    // resumes per API request
+  const RPM_LIMIT = 9;     // stay safely under 10 RPM
   const RATE_LIMIT_WAIT = 60;
 
-  for (let i = 0; i < files.length; i++) {
-    if (i > 0 && i % BATCH_SIZE === 0) {
+  // Split files into chunks of 3
+  const chunks = [];
+  for (let i = 0; i < files.length; i += CHUNK_SIZE) {
+    chunks.push(files.slice(i, i + CHUNK_SIZE));
+  }
+
+  for (let ci = 0; ci < chunks.length; ci++) {
+    // Pause after every RPM_LIMIT requests (18 chunks = 54 resumes)
+    if (ci > 0 && ci % RPM_LIMIT === 0) {
       for (let s = RATE_LIMIT_WAIT; s > 0; s--) {
         document.getElementById('progressStatus').textContent =
           `Rate limit reached — resuming in ${s}s...`;
@@ -708,27 +719,47 @@ async function runAnalysis() {
       }
     }
 
-    const file = files[i];
-    setProgress(i, `Extracting: ${file.name}`);
+    const chunk = chunks[ci];
+    const names = chunk.map(f => f.name).join(', ');
+    setProgress(done, `Extracting: ${names}`);
 
-    try {
-      const text = await extractText(file);
-      setProgress(i, `Scoring: ${file.name}`);
-      const score = await scoreResume(apiKey, jobDesc, text, file.name);
-      results.push({ ...score, filename: file.name });
-    } catch (e) {
-      results.push({
-        candidate_name: file.name, filename: file.name,
-        overall_score: 0, skills_match: 0, experience_years: 0,
-        education_level: 0, jd_match: 0,
-        strengths: [], gaps: ['Error processing'],
-        summary: `Could not process: ${e.message}`, error: true
-      });
+    // Extract text from all files in chunk
+    const batch = [];
+    for (const file of chunk) {
+      try {
+        const text = await extractText(file);
+        batch.push({ text, filename: file.name });
+      } catch (e) {
+        batch.push({ text: '', filename: file.name, extractError: e.message });
+      }
     }
 
-    done++;
-    setProgress(done, done === total ? 'All resumes processed successfully' : `Done: ${file.name}`);
+    setProgress(done, `Scoring: ${names}`);
+
+    try {
+      const scores = await scoreResumeBatch(apiKey, jobDesc, batch);
+      scores.forEach((score, idx) => {
+        results.push({ ...score, filename: batch[idx].filename });
+        done++;
+        setProgress(done, `Done: ${batch[idx].filename}`);
+      });
+    } catch (e) {
+      // If batch fails, mark all in chunk as error
+      batch.forEach(b => {
+        results.push({
+          candidate_name: b.filename, filename: b.filename,
+          overall_score: 0, skills_match: 0, experience_years: 0,
+          education_level: 0, jd_match: 0,
+          strengths: [], gaps: ['Error processing'],
+          summary: `Could not process: ${e.message}`, error: true
+        });
+        done++;
+      });
+      setProgress(done, `Error on batch: ${names}`);
+    }
   }
+
+  setProgress(total, 'All resumes processed successfully');
 
   results.sort((a, b) => b.overall_score - a.overall_score);
   renderResults();
