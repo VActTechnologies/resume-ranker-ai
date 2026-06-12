@@ -407,6 +407,17 @@
   .empty-title { font-size: 14px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
   .empty-sub { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
 
+  /* Error */
+  .error-box {
+    background: var(--danger-bg);
+    border: 1px solid rgba(248,81,73,0.25);
+    border-radius: var(--radius-sm);
+    padding: 11px 14px;
+    font-size: 12.5px; color: var(--danger);
+    margin-bottom: 14px;
+    display: flex; gap: 8px; align-items: flex-start;
+  }
+
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
 
@@ -430,7 +441,7 @@
   </div>
   <div class="topbar-right">
     <div class="status-dot"></div>
-    <div class="status-label">Gemini 2.5 Flash Lite</div>
+    <div class="status-label">Gemini 2.5 Flash</div>
   </div>
 </div>
 
@@ -469,7 +480,7 @@
       </div>
       <div class="section-body">
         <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
-          <input type="file" id="fileInput" multiple accept=".pdf,.txt,.doc,.docx"/>
+          <input type="file" id="fileInput" multiple accept=".pdf,.txt"/>
           <div class="drop-icon-wrap">📄</div>
           <div class="drop-title"><span>Click to upload</span> or drag &amp; drop</div>
           <div class="drop-sub">PDF &amp; TXT supported · No file limit</div>
@@ -489,7 +500,7 @@
 
     <div class="info-box">
       <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-      Processes 10 resumes per batch. Auto-pauses 60s between batches to respect the free tier rate limit.
+      Each resume is scored independently against the job description using a fixed rubric — scores don't change based on other candidates.
     </div>
 
   </aside>
@@ -498,7 +509,7 @@
 
     <div class="page-header">
       <div class="page-title">Candidate Rankings</div>
-      <div class="page-subtitle">AI-scored and ranked by overall job fit</div>
+      <div class="page-subtitle">Absolute scores against the job description — consistent regardless of batch size</div>
     </div>
 
     <div class="progress-card" id="progressWrap" style="display:none">
@@ -521,9 +532,9 @@
           <div class="results-meta" id="resultsSub"></div>
         </div>
         <div class="toolbar-actions">
-          <button class="btn-outline" onclick="exportContacts()">
+          <button class="btn-outline" onclick="exportCSV()">
             <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Download Contacts
+            Export CSV
           </button>
           <button class="btn-outline" onclick="clearAll()">
             <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
@@ -551,11 +562,13 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 let files = [];
 let results = [];
 
+// ── File handling ──────────────────────────────────────────────────────────────
+
 const fileInput = document.getElementById('fileInput');
-const dropzone = document.getElementById('dropzone');
+const dropzone  = document.getElementById('dropzone');
 
 fileInput.addEventListener('change', e => addFiles([...e.target.files]));
-dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+dropzone.addEventListener('dragover',  e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
 dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
 dropzone.addEventListener('drop', e => {
   e.preventDefault();
@@ -564,302 +577,362 @@ dropzone.addEventListener('drop', e => {
 });
 
 function addFiles(newFiles) {
-  const allowed = newFiles.filter(f => /\.(pdf|txt|docx?)$/i.test(f.name));
-  files = [...files, ...allowed];
+  const allowed = newFiles.filter(f => /\.(pdf|txt)$/i.test(f.name));
+  const existing = new Set(files.map(f => f.name + f.size));
+  const unique   = allowed.filter(f => !existing.has(f.name + f.size));
+  files.push(...unique);
   renderFileList();
   updateRunBtn();
+  fileInput.value = '';
 }
 
-function removeFile(i) {
-  files.splice(i, 1);
+function removeFile(idx) {
+  files.splice(idx, 1);
   renderFileList();
   updateRunBtn();
 }
 
 function clearFiles() {
   files = [];
-  fileInput.value = '';
   renderFileList();
   updateRunBtn();
 }
 
 function renderFileList() {
   const list = document.getElementById('fileList');
-  const count = document.getElementById('fileCount');
-  const bar = document.getElementById('fileCountBar');
-  if (files.length === 0) { list.innerHTML = ''; bar.style.display = 'none'; return; }
+  const bar  = document.getElementById('fileCountBar');
+  const cnt  = document.getElementById('fileCount');
+
+  if (!files.length) { list.innerHTML = ''; bar.style.display = 'none'; return; }
+
   bar.style.display = 'flex';
-  list.innerHTML = files.map((f, i) => {
-    const ext = f.name.split('.').pop().toUpperCase();
-    return `
-      <div class="file-item">
-        <span class="file-ext">${ext}</span>
-        <span class="file-name">${f.name}</span>
-        <span class="file-size">${(f.size/1024).toFixed(0)}KB</span>
-        <button class="file-remove" onclick="removeFile(${i})">&#x2715;</button>
-      </div>`;
-  }).join('');
-  count.textContent = `${files.length} file${files.length === 1 ? '' : 's'} ready`;
+  cnt.textContent   = `${files.length} file${files.length > 1 ? 's' : ''} selected`;
+
+  list.innerHTML = files.map((f, i) => `
+    <div class="file-item">
+      <span class="file-ext">${f.name.split('.').pop()}</span>
+      <span class="file-name">${f.name}</span>
+      <span class="file-size">${formatSize(f.size)}</span>
+      <button class="file-remove" onclick="removeFile(${i})" title="Remove">✕</button>
+    </div>
+  `).join('');
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
 }
 
 function updateRunBtn() {
   const key = document.getElementById('apiKey').value.trim();
-  const jd = document.getElementById('jobDesc').value.trim();
-  document.getElementById('runBtn').disabled = !(key && jd && files.length > 0);
+  const jd  = document.getElementById('jobDesc').value.trim();
+  document.getElementById('runBtn').disabled = !(key && jd && files.length);
 }
 
 document.getElementById('apiKey').addEventListener('input', updateRunBtn);
 document.getElementById('jobDesc').addEventListener('input', updateRunBtn);
 
+// ── PDF / text extraction ──────────────────────────────────────────────────────
+
 async function extractText(file) {
-  if (file.name.toLowerCase().endsWith('.pdf')) {
-    const buf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+    const buf  = await file.arrayBuffer();
+    const pdf  = await pdfjsLib.getDocument({ data: buf }).promise;
     let text = '';
     for (let p = 1; p <= pdf.numPages; p++) {
-      const page = await pdf.getPage(p);
+      const page    = await pdf.getPage(p);
       const content = await page.getTextContent();
       text += content.items.map(i => i.str).join(' ') + '\n';
     }
     return text.trim();
   } else {
-    return await file.text();
+    return new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload  = e => res(e.target.result);
+      reader.onerror = () => rej(new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
   }
 }
 
-async function scoreResumeBatch(apiKey, jobDesc, batch) {
-  // batch = [{text, filename}, {text, filename}, ...]
-  const resumeBlocks = batch.map((r, i) => `RESUME ${i+1} (filename: ${r.filename}):
-${r.text.slice(0, 12000)}`).join('\n\n---\n\n');
+// ── Gemini API call — ONE resume at a time ────────────────────────────────────
+//
+//  KEY FIX: Each resume is scored in isolation using a strict fixed rubric.
+//  The model never sees more than one resume per request, so scores can't
+//  shift based on what else is in the batch.
 
-  const prompt = `You are an expert HR analyst. Score each resume below for the given job description.
+const SYSTEM_PROMPT = `You are a professional resume screener. Your job is to score a single resume against a job description using a FIXED, ABSOLUTE rubric. 
 
-JOB DESCRIPTION:
-${jobDesc}
+CRITICAL RULES:
+- Score ONLY against the job description criteria, not relative to any other candidate.
+- A score of 75 means this resume matches 75% of what the job requires, regardless of how many resumes are being reviewed.
+- Do NOT inflate or deflate scores based on context. Be consistent: the same resume should always receive the same score.
 
-${resumeBlocks}
+SCORING RUBRIC (total 100 points):
+- Skills match (40 pts): How many required and preferred skills/tools/technologies does the candidate have?
+- Experience (30 pts): Years of relevant experience, seniority, domain fit.
+- Education (20 pts): Degree relevance, institution quality, certifications.
+- Presentation (10 pts): Resume clarity, structure, specificity of achievements.
 
-For EACH resume, score across these 4 dimensions (each 0-100):
-1. skills_match - How well do the candidate's technical/professional skills match the JD?
-2. experience_years - How appropriate is the years and depth of experience?
-3. education_level - How well does the educational background fit the role?
-4. jd_match - Overall alignment with the job description requirements?
+Return ONLY a valid JSON object — no markdown, no explanation outside the JSON:
+{
+  "name": "Full name from resume or 'Unknown'",
+  "score": <0-100 integer, weighted sum of rubric>,
+  "skills": <0-40 integer>,
+  "experience": <0-30 integer>,
+  "education": <0-20 integer>,
+  "presentation": <0-10 integer>,
+  "matched_skills": ["skill1", "skill2"],
+  "gaps": ["missing1", "missing2"],
+  "summary": "2-3 sentence assessment of fit for this specific role."
+}`;
 
-Also extract per resume:
-- overall_score: weighted average (skills 35%, jd_match 35%, experience 20%, education 10%)
-- candidate_name: extract full name from resume or use filename if not found
-- email: extract email address, or empty string if not found
-- phone: extract phone number. Look for patterns like +91 XXXXX XXXXX, (XXX) XXX-XXXX, XXX-XXX-XXXX, or any sequence of 10+ digits with optional country code. Return exactly as written. Empty string if not found.
-- location: extract city/country, or empty string if not found
-- total_experience: total years of experience as a number, or 0 if not found
-- strengths: array of 2-3 short strength tags
-- gaps: array of 1-2 short gap tags
-- summary: 1-2 sentence summary of fit
+async function scoreResume(apiKey, jobDesc, resumeText) {
+  const userMessage = `JOB DESCRIPTION:\n${jobDesc}\n\n---\n\nRESUME:\n${resumeText}`;
 
-Respond ONLY with a valid JSON array with one object per resume, no markdown, no explanation:
-[{"candidate_name":"","email":"","phone":"","location":"","total_experience":0,"overall_score":0,"skills_match":0,"experience_years":0,"education_level":0,"jd_match":0,"strengths":[],"gaps":[],"summary":""}]`;
-
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 2048 }
-    })
-  });
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+        generationConfig: {
+          temperature: 0.1,   // low temp = consistent, deterministic scores
+          maxOutputTokens: 600
+        }
+      })
+    }
+  );
 
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || `API error ${res.status}`);
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `HTTP ${res.status}`);
   }
 
   const data = await res.json();
-  const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  const clean = raw.replace(/```json|```/g, '').trim();
+  const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+  // Strip markdown fences if present
+  const clean = raw.replace(/```json|```/gi, '').trim();
   return JSON.parse(clean);
 }
 
+// ── Rate limiting helper ───────────────────────────────────────────────────────
+// Free tier: ~15 req/min. We add a small delay between each call to stay safe.
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Main analysis loop ─────────────────────────────────────────────────────────
+
 async function runAnalysis() {
-  const apiKey = document.getElementById('apiKey').value.trim();
+  const apiKey  = document.getElementById('apiKey').value.trim();
   const jobDesc = document.getElementById('jobDesc').value.trim();
 
-  document.getElementById('runBtn').disabled = true;
-  document.getElementById('progressWrap').style.display = 'block';
-  document.getElementById('resultsSection').style.display = 'none';
-  document.getElementById('emptyState').style.display = 'none';
-  document.getElementById('errorBox').innerHTML = '';
+  if (!apiKey || !jobDesc || !files.length) return;
+
+  // Reset UI
   results = [];
+  document.getElementById('emptyState').style.display    = 'none';
+  document.getElementById('resultsSection').style.display = 'none';
+  document.getElementById('progressWrap').style.display  = 'block';
+  document.getElementById('resultsList').innerHTML       = '';
+  document.getElementById('errorBox').innerHTML          = '';
+  document.getElementById('runBtn').disabled             = true;
 
   const total = files.length;
-  let done = 0;
+  setProgress(0, total, 'Starting…');
 
-  const setProgress = (n, msg) => {
-    document.getElementById('progressFill').style.width = `${(n/total)*100}%`;
-    document.getElementById('progressText').textContent = `${n} / ${total}`;
-    document.getElementById('progressStatus').textContent = msg;
-  };
+  for (let i = 0; i < total; i++) {
+    const file = files[i];
+    setProgress(i, total, `Extracting text from ${file.name}…`);
 
-  const CHUNK_SIZE = 3;    // resumes per API request
-  const RPM_LIMIT = 9;     // stay safely under 10 RPM
-  const RATE_LIMIT_WAIT = 60;
-
-  // Split files into chunks of 3
-  const chunks = [];
-  for (let i = 0; i < files.length; i += CHUNK_SIZE) {
-    chunks.push(files.slice(i, i + CHUNK_SIZE));
-  }
-
-  for (let ci = 0; ci < chunks.length; ci++) {
-    // Pause after every RPM_LIMIT requests (18 chunks = 54 resumes)
-    if (ci > 0 && ci % RPM_LIMIT === 0) {
-      for (let s = RATE_LIMIT_WAIT; s > 0; s--) {
-        document.getElementById('progressStatus').textContent =
-          `Rate limit reached — resuming in ${s}s...`;
-        await new Promise(r => setTimeout(r, 1000));
-      }
-    }
-
-    const chunk = chunks[ci];
-    const names = chunk.map(f => f.name).join(', ');
-    setProgress(done, `Extracting: ${names}`);
-
-    // Extract text from all files in chunk
-    const batch = [];
-    for (const file of chunk) {
-      try {
-        const text = await extractText(file);
-        batch.push({ text, filename: file.name });
-      } catch (e) {
-        batch.push({ text: '', filename: file.name, extractError: e.message });
-      }
-    }
-
-    setProgress(done, `Scoring: ${names}`);
-
+    let resumeText;
     try {
-      const scores = await scoreResumeBatch(apiKey, jobDesc, batch);
-      scores.forEach((score, idx) => {
-        results.push({ ...score, filename: batch[idx].filename });
-        done++;
-        setProgress(done, `Done: ${batch[idx].filename}`);
-      });
+      resumeText = await extractText(file);
     } catch (e) {
-      // If batch fails, mark all in chunk as error
-      batch.forEach(b => {
-        results.push({
-          candidate_name: b.filename, filename: b.filename,
-          overall_score: 0, skills_match: 0, experience_years: 0,
-          education_level: 0, jd_match: 0,
-          strengths: [], gaps: ['Error processing'],
-          summary: `Could not process: ${e.message}`, error: true
-        });
-        done++;
-      });
-      setProgress(done, `Error on batch: ${names}`);
+      showError(`Could not read "${file.name}": ${e.message}`);
+      continue;
     }
+
+    if (!resumeText || resumeText.length < 50) {
+      showError(`"${file.name}" appears to be empty or unreadable — skipped.`);
+      setProgress(i + 1, total, '');
+      continue;
+    }
+
+    setProgress(i, total, `Scoring ${file.name} against job description…`);
+
+    let scored;
+    try {
+      scored = await scoreResume(apiKey, jobDesc, resumeText.slice(0, 12000)); // cap at ~12k chars
+    } catch (e) {
+      // Rate-limit retry: if 429, wait 65s and retry once
+      if (e.message.includes('429') || e.message.toLowerCase().includes('quota')) {
+        setProgress(i, total, `Rate limit hit — waiting 65s before retrying ${file.name}…`);
+        await delay(65000);
+        try {
+          scored = await scoreResume(apiKey, jobDesc, resumeText.slice(0, 12000));
+        } catch (e2) {
+          showError(`Failed to score "${file.name}" after retry: ${e2.message}`);
+          setProgress(i + 1, total, '');
+          continue;
+        }
+      } else {
+        showError(`Error scoring "${file.name}": ${e.message}`);
+        setProgress(i + 1, total, '');
+        continue;
+      }
+    }
+
+    results.push({ ...scored, fileName: file.name });
+    appendResult(scored, file.name);
+    setProgress(i + 1, total, `Scored ${i + 1} of ${total}`);
+
+    // Small pause between requests to respect rate limits (~4 req/s max on free tier)
+    if (i < total - 1) await delay(4500);
   }
 
-  setProgress(total, 'All resumes processed successfully');
+  // Sort by score descending and re-render
+  results.sort((a, b) => b.score - a.score);
+  renderAllResults();
 
-  results.sort((a, b) => b.overall_score - a.overall_score);
-  renderResults();
+  setProgress(total, total, '✓ All done');
+  document.getElementById('progressWrap').style.display = 'none';
   document.getElementById('runBtn').disabled = false;
+  updateRunBtn();
 }
 
-function renderResults() {
+// ── Progress helpers ───────────────────────────────────────────────────────────
+
+function setProgress(done, total, status) {
+  const pct = total ? (done / total) * 100 : 0;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressText').textContent = `${done} / ${total}`;
+  document.getElementById('progressStatus').textContent = status;
+}
+
+function showError(msg) {
+  const box = document.getElementById('errorBox');
+  box.innerHTML += `
+    <div class="error-box">
+      <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      ${msg}
+    </div>`;
+}
+
+// ── Rendering ──────────────────────────────────────────────────────────────────
+
+function appendResult(r, fileName) {
+  // Show results section immediately as cards come in
   document.getElementById('resultsSection').style.display = 'block';
-  document.getElementById('emptyState').style.display = 'none';
-  document.getElementById('resultsSub').textContent =
-    `${results.length} candidates analyzed · sorted by overall fit score`;
-
-  const list = document.getElementById('resultsList');
-  list.innerHTML = results.map((r, i) => {
-    const rank = i + 1;
-    const rankClass = rank <= 3 ? `rank-${rank}` : '';
-    const rankLabel = rank === 1 ? '#1  Top Match' : `#${rank}`;
-    const sc = r.overall_score;
-    const scoreClass = sc >= 70 ? 'score-high' : sc >= 45 ? 'score-mid' : 'score-low';
-
-    const dims = [
-      { label: 'Skills', val: r.skills_match },
-      { label: 'Experience', val: r.experience_years },
-      { label: 'Education', val: r.education_level },
-      { label: 'JD Match', val: r.jd_match },
-    ];
-
-    const metricHtml = dims.map(d => `
-      <div class="score-metric">
-        <div class="metric-label">${d.label}</div>
-        <div class="metric-value">${d.val}</div>
-        <div class="metric-bar-bg"><div class="metric-bar-fill" style="width:${d.val}%"></div></div>
-      </div>`).join('');
-
-    const strengths = (r.strengths || []).map(s => `<span class="tag">${s}</span>`).join('');
-    const gaps = (r.gaps || []).map(g => `<span class="tag gap">${g}</span>`).join('');
-
-    return `
-      <div class="result-card ${rankClass}" style="animation-delay:${i*0.06}s">
-        <div class="result-card-header">
-          <div class="rank-num">${rankLabel}</div>
-          <div class="candidate-info">
-            <div class="candidate-name">${r.candidate_name || r.filename}</div>
-            <div class="candidate-file">${r.filename}</div>
-          </div>
-          <div class="score-badge ${scoreClass}">
-            <div class="score-value">${sc}</div>
-            <div class="score-label">/ 100</div>
-          </div>
-        </div>
-        <div class="result-card-body">
-          <div class="score-grid">${metricHtml}</div>
-          <div class="result-summary">
-            ${r.summary}
-            <div class="tag-row">${strengths}${gaps}</div>
-          </div>
-        </div>
-      </div>`;
-  }).join('');
-
-  document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('resultsList').appendChild(buildCard(r, fileName, results.length));
 }
 
+function renderAllResults() {
+  const list = document.getElementById('resultsList');
+  list.innerHTML = '';
+  results.forEach((r, idx) => list.appendChild(buildCard(r, r.fileName, idx + 1)));
+  document.getElementById('resultsSection').style.display = 'block';
+  document.getElementById('resultsSub').textContent =
+    `${results.length} candidate${results.length !== 1 ? 's' : ''} · ranked by absolute job-fit score`;
+}
 
+function buildCard(r, fileName, rank) {
+  const scoreClass = r.score >= 70 ? 'score-high' : r.score >= 45 ? 'score-mid' : 'score-low';
+  const rankClass  = rank <= 3 ? `rank-${rank}` : '';
+  const medal      = rank === 1 ? '🥇 #1' : rank === 2 ? '🥈 #2' : rank === 3 ? '🥉 #3' : `#${rank}`;
 
-function exportContacts() {
-  const headers = [
-    'Rank','Name','Phone Number','Email ID','Location','Total Experience (yrs)',
-    'AI Score','Skills Score','Experience Score','Education Score','JD Match Score','AI Comment'
-  ];
-  const rows = results.map((r, i) => [
-    i+1,
-    '"' + (r.candidate_name||'').replace(/"/g,'""') + '"',
-    '"' + (r.phone||'').replace(/"/g,'""') + '"',
-    '"' + (r.email||'').replace(/"/g,'""') + '"',
-    '"' + (r.location||'').replace(/"/g,'""') + '"',
-    r.total_experience||0,
-    r.overall_score,
-    r.skills_match||0,
-    r.experience_years||0,
-    r.education_level||0,
-    r.jd_match||0,
-    '"' + (r.summary||'').replace(/"/g,'""') + '"'
+  const matchedTags = (r.matched_skills || []).slice(0, 6).map(s =>
+    `<span class="tag">${s}</span>`).join('');
+  const gapTags = (r.gaps || []).slice(0, 4).map(s =>
+    `<span class="tag gap">${s}</span>`).join('');
+
+  const card = document.createElement('div');
+  card.className = `result-card ${rankClass}`;
+  card.style.animationDelay = (rank * 0.05) + 's';
+
+  card.innerHTML = `
+    <div class="result-card-header">
+      <div class="rank-num">${medal}</div>
+      <div class="candidate-info">
+        <div class="candidate-name">${r.name || 'Unknown'}</div>
+        <div class="candidate-file">${fileName}</div>
+      </div>
+      <div class="score-badge ${scoreClass}">
+        <div class="score-value">${r.score}</div>
+        <div class="score-label">/ 100</div>
+      </div>
+    </div>
+    <div class="result-card-body">
+      <div class="score-grid">
+        ${metricBlock('Skills', r.skills, 40)}
+        ${metricBlock('Experience', r.experience, 30)}
+        ${metricBlock('Education', r.education, 20)}
+        ${metricBlock('Presentation', r.presentation, 10)}
+      </div>
+      <div class="result-summary">
+        <div>${r.summary || '—'}</div>
+        ${matchedTags || gapTags ? `
+        <div class="tag-row">
+          ${matchedTags}
+          ${gapTags}
+        </div>` : ''}
+      </div>
+    </div>`;
+  return card;
+}
+
+function metricBlock(label, value, max) {
+  const pct = max ? Math.round((value / max) * 100) : 0;
+  return `
+    <div class="score-metric">
+      <div class="metric-label">${label}</div>
+      <div class="metric-value">${value ?? '—'}<span style="font-size:10px;color:var(--text-muted)">/${max}</span></div>
+      <div class="metric-bar-bg"><div class="metric-bar-fill" style="width:${pct}%"></div></div>
+    </div>`;
+}
+
+// ── Export ─────────────────────────────────────────────────────────────────────
+
+function exportCSV() {
+  if (!results.length) return;
+  const header = ['Rank','Name','File','Score','Skills','Experience','Education','Presentation','Matched Skills','Gaps','Summary'];
+  const rows   = results.map((r, i) => [
+    i + 1,
+    `"${(r.name || '').replace(/"/g,'""')}"`,
+    `"${(r.fileName || '').replace(/"/g,'""')}"`,
+    r.score,
+    r.skills,
+    r.experience,
+    r.education,
+    r.presentation,
+    `"${(r.matched_skills || []).join(', ').replace(/"/g,'""')}"`,
+    `"${(r.gaps || []).join(', ').replace(/"/g,'""')}"`,
+    `"${(r.summary || '').replace(/"/g,'""')}"`
   ]);
-  const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+
+  const csv  = [header, ...rows].map(r => r.join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'candidate_contacts.csv';
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = 'resume_rankings.csv';
   a.click();
 }
 
+// ── Clear all ──────────────────────────────────────────────────────────────────
+
 function clearAll() {
-  files = []; results = [];
-  renderFileList(); updateRunBtn();
+  results = [];
+  clearFiles();
+  document.getElementById('resultsList').innerHTML   = '';
   document.getElementById('resultsSection').style.display = 'none';
-  document.getElementById('progressWrap').style.display = 'none';
-  document.getElementById('emptyState').style.display = 'block';
-  document.getElementById('errorBox').innerHTML = '';
-  fileInput.value = '';
+  document.getElementById('emptyState').style.display    = 'block';
+  document.getElementById('progressWrap').style.display  = 'none';
+  document.getElementById('errorBox').innerHTML          = '';
+  updateRunBtn();
 }
 </script>
 </body>
