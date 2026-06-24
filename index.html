@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -114,7 +115,24 @@
     display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   }
 
+  .section-num.warn-num {
+    background: var(--warn-bg); color: var(--warn);
+  }
+
   .section-title { font-size: 12.5px; font-weight: 700; color: var(--text); }
+
+  .neg-kw-badge {
+    margin-left: auto;
+    background: var(--warn-bg);
+    color: var(--warn);
+    font-size: 10px;
+    font-weight: 700;
+    font-family: 'IBM Plex Mono', monospace;
+    padding: 2px 7px;
+    border-radius: 100px;
+    border: 1px solid rgba(210,153,34,0.2);
+  }
+
   .section-body { padding: 16px 18px; }
 
   input[type="text"], input[type="password"], textarea {
@@ -138,6 +156,52 @@
 
   input::placeholder, textarea::placeholder { color: var(--text-muted); }
   textarea { min-height: 120px; line-height: 1.6; }
+
+  .neg-kw-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 13px;
+    padding: 9px 12px;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .neg-kw-input:focus {
+    border-color: var(--warn);
+    box-shadow: 0 0 0 3px rgba(210,153,34,0.15);
+  }
+
+  .neg-kw-input::placeholder { color: var(--text-muted); }
+
+  .neg-kw-chips {
+    display: flex; flex-wrap: wrap; gap: 5px;
+    margin-top: 9px; min-height: 0;
+  }
+
+  .neg-kw-chip {
+    background: var(--warn-bg);
+    color: var(--warn);
+    border: 1px solid rgba(210,153,34,0.25);
+    border-radius: 100px;
+    font-size: 11px; font-weight: 600;
+    padding: 3px 8px 3px 10px;
+    display: flex; align-items: center; gap: 5px;
+    white-space: nowrap;
+  }
+
+  .neg-chip-remove {
+    background: none; border: none; cursor: pointer;
+    color: var(--warn); opacity: 0.7;
+    padding: 0; line-height: 1; font-size: 12px;
+    display: flex; align-items: center;
+    transition: opacity 0.12s;
+  }
+
+  .neg-chip-remove:hover { opacity: 1; }
 
   .input-hint { color: var(--text-muted); font-size: 11px; margin-top: 6px; display: flex; align-items: center; gap: 4px; }
 
@@ -336,6 +400,9 @@
   .result-card.rank-2 { border-left: 3px solid var(--silver); }
   .result-card.rank-3 { border-left: 3px solid var(--bronze); }
 
+  /* Flag border for flagged resumes */
+  .result-card.has-neg-kw { border-top: 2px solid var(--warn); }
+
   .result-card-header {
     padding: 14px 18px;
     display: flex; align-items: center; gap: 12px;
@@ -355,6 +422,17 @@
   .candidate-info { flex: 1; min-width: 0; }
   .candidate-name { font-size: 13.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .candidate-file { font-size: 11px; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* negative keyword alert in header */
+  .neg-kw-alert {
+    display: flex; align-items: center; gap: 5px;
+    background: var(--warn-bg);
+    border: 1px solid rgba(210,153,34,0.25);
+    border-radius: var(--radius-sm);
+    padding: 4px 9px;
+    font-size: 11px; font-weight: 700; color: var(--warn);
+    white-space: nowrap; flex-shrink: 0;
+  }
 
   .score-badge { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; }
   .score-value { font-family: 'IBM Plex Mono', monospace; font-size: 20px; font-weight: 500; line-height: 1; }
@@ -399,6 +477,27 @@
   .tag.gap {
     background: var(--danger-bg); color: var(--danger);
     border-color: rgba(200,30,30,0.15);
+  }
+
+  /* Negative keyword hit tags */
+  .neg-kw-section {
+    margin-top: 10px;
+    padding: 9px 12px;
+    background: rgba(210,153,34,0.06);
+    border: 1px solid rgba(210,153,34,0.18);
+    border-radius: var(--radius-sm);
+  }
+
+  .neg-kw-section-label {
+    font-size: 10px; font-weight: 700; color: var(--warn);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    margin-bottom: 6px;
+    display: flex; align-items: center; gap: 5px;
+  }
+
+  .tag.neg-hit {
+    background: var(--warn-bg); color: var(--warn);
+    border: 1px solid rgba(210,153,34,0.25);
   }
 
   /* Empty state */
@@ -473,6 +572,29 @@
       </div>
     </div>
 
+    <!-- Negative Keywords Section -->
+    <div class="section-card">
+      <div class="section-header">
+        <div class="section-num warn-num">⚑</div>
+        <div class="section-title">Negative Keywords</div>
+        <span class="neg-kw-badge" id="negKwBadge" style="display:none">0</span>
+      </div>
+      <div class="section-body">
+        <input
+          type="text"
+          id="negKwInput"
+          class="neg-kw-input"
+          placeholder="Type keyword and press Enter…"
+          autocomplete="off"
+        />
+        <div class="input-hint">
+          <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Resumes containing these words are flagged
+        </div>
+        <div class="neg-kw-chips" id="negKwChips"></div>
+      </div>
+    </div>
+
     <div class="section-card">
       <div class="section-header">
         <div class="section-num">3</div>
@@ -500,7 +622,7 @@
 
     <div class="info-box">
       <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-      Each resume is scored independently against the job description using a fixed rubric — scores don't change based on other candidates.
+      Each resume is scored independently. Negative keyword hits are flagged on the card — scores are not penalized.
     </div>
 
   </aside>
@@ -509,7 +631,7 @@
 
     <div class="page-header">
       <div class="page-title">Candidate Rankings</div>
-      <div class="page-subtitle">Absolute scores against the job description — consistent regardless of batch size</div>
+      <div class="page-subtitle">Absolute scores against the job description — negative keyword hits shown as warnings</div>
     </div>
 
     <div class="progress-card" id="progressWrap" style="display:none">
@@ -561,6 +683,70 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 
 let files = [];
 let results = [];
+let negativeKeywords = [];
+
+// ── Negative Keywords ──────────────────────────────────────────────────────────
+
+const negKwInput = document.getElementById('negKwInput');
+
+negKwInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    const val = negKwInput.value.trim().replace(/,$/, '');
+    if (val && !negativeKeywords.includes(val.toLowerCase())) {
+      negativeKeywords.push(val.toLowerCase());
+      renderNegKwChips();
+    }
+    negKwInput.value = '';
+  }
+});
+
+function removeNegKw(idx) {
+  negativeKeywords.splice(idx, 1);
+  renderNegKwChips();
+}
+
+function renderNegKwChips() {
+  const container = document.getElementById('negKwChips');
+  const badge = document.getElementById('negKwBadge');
+
+  if (!negativeKeywords.length) {
+    container.innerHTML = '';
+    badge.style.display = 'none';
+    return;
+  }
+
+  badge.style.display = 'inline';
+  badge.textContent = negativeKeywords.length;
+
+  container.innerHTML = negativeKeywords.map((kw, i) => `
+    <div class="neg-kw-chip">
+      ${kw}
+      <button class="neg-chip-remove" onclick="removeNegKw(${i})" title="Remove">✕</button>
+    </div>
+  `).join('');
+}
+
+// ── Check a resume text for negative keyword hits (fixed) ─────────────────────
+
+function checkNegativeKeywords(text) {
+  if (!negativeKeywords.length) return [];
+
+  // Normalize extracted text: strip invisible/zero-width chars, collapse whitespace, lowercase
+  const normalized = text
+    .toLowerCase()
+    .replace(/[\u00AD\u200B\u200C\u200D\uFEFF]/g, '') // soft hyphens, zero-width chars
+    .replace(/\s+/g, ' ');                              // collapse all whitespace to single space
+
+  return negativeKeywords.filter(kw => {
+    const normKw = kw.toLowerCase().replace(/\s+/g, ' ').trim();
+    // Direct match first
+    if (normalized.includes(normKw)) return true;
+    // Space-stripped fallback: catches PDF kerning splits like "Neo Sky" vs "neosky"
+    if (normalized.replace(/\s/g, '').includes(normKw.replace(/\s/g, ''))) return true;
+    return false;
+  });
+}
 
 // ── File handling ──────────────────────────────────────────────────────────────
 
@@ -656,11 +842,7 @@ async function extractText(file) {
   }
 }
 
-// ── Gemini API call — ONE resume at a time ────────────────────────────────────
-//
-//  KEY FIX: Each resume is scored in isolation using a strict fixed rubric.
-//  The model never sees more than one resume per request, so scores can't
-//  shift based on what else is in the batch.
+// ── Gemini API call ────────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `You are a professional resume screener. Your job is to score a single resume against a job description using a FIXED, ABSOLUTE rubric. 
 
@@ -700,7 +882,7 @@ async function scoreResume(apiKey, jobDesc, resumeText) {
         systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: [{ role: 'user', parts: [{ text: userMessage }] }],
         generationConfig: {
-          temperature: 0.1,   // low temp = consistent, deterministic scores
+          temperature: 0.1,
           maxOutputTokens: 600
         }
       })
@@ -714,14 +896,11 @@ async function scoreResume(apiKey, jobDesc, resumeText) {
 
   const data = await res.json();
   const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-  // Strip markdown fences if present
   const clean = raw.replace(/```json|```/gi, '').trim();
   return JSON.parse(clean);
 }
 
 // ── Rate limiting helper ───────────────────────────────────────────────────────
-// Free tier: ~15 req/min. We add a small delay between each call to stay safe.
 
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -733,7 +912,6 @@ async function runAnalysis() {
 
   if (!apiKey || !jobDesc || !files.length) return;
 
-  // Reset UI
   results = [];
   document.getElementById('emptyState').style.display    = 'none';
   document.getElementById('resultsSection').style.display = 'none';
@@ -763,13 +941,15 @@ async function runAnalysis() {
       continue;
     }
 
+    // Check negative keywords BEFORE API call (pure client-side, free)
+    const negHits = checkNegativeKeywords(resumeText);
+
     setProgress(i, total, `Scoring ${file.name} against job description…`);
 
     let scored;
     try {
-      scored = await scoreResume(apiKey, jobDesc, resumeText.slice(0, 12000)); // cap at ~12k chars
+      scored = await scoreResume(apiKey, jobDesc, resumeText.slice(0, 12000));
     } catch (e) {
-      // Rate-limit retry: if 429, wait 65s and retry once
       if (e.message.includes('429') || e.message.toLowerCase().includes('quota')) {
         setProgress(i, total, `Rate limit hit — waiting 65s before retrying ${file.name}…`);
         await delay(65000);
@@ -787,15 +967,14 @@ async function runAnalysis() {
       }
     }
 
-    results.push({ ...scored, fileName: file.name });
-    appendResult(scored, file.name);
+    // Attach negative keyword hits to the result
+    results.push({ ...scored, fileName: file.name, negHits });
+    appendResult(scored, file.name, negHits);
     setProgress(i + 1, total, `Scored ${i + 1} of ${total}`);
 
-    // Small pause between requests to respect rate limits (~4 req/s max on free tier)
     if (i < total - 1) await delay(4500);
   }
 
-  // Sort by score descending and re-render
   results.sort((a, b) => b.score - a.score);
   renderAllResults();
 
@@ -825,33 +1004,56 @@ function showError(msg) {
 
 // ── Rendering ──────────────────────────────────────────────────────────────────
 
-function appendResult(r, fileName) {
-  // Show results section immediately as cards come in
+function appendResult(r, fileName, negHits) {
   document.getElementById('resultsSection').style.display = 'block';
-  document.getElementById('resultsList').appendChild(buildCard(r, fileName, results.length));
+  document.getElementById('resultsList').appendChild(buildCard(r, fileName, results.length, negHits));
 }
 
 function renderAllResults() {
   const list = document.getElementById('resultsList');
   list.innerHTML = '';
-  results.forEach((r, idx) => list.appendChild(buildCard(r, r.fileName, idx + 1)));
+  const flaggedCount = results.filter(r => r.negHits && r.negHits.length).length;
+  results.forEach((r, idx) => list.appendChild(buildCard(r, r.fileName, idx + 1, r.negHits)));
   document.getElementById('resultsSection').style.display = 'block';
-  document.getElementById('resultsSub').textContent =
-    `${results.length} candidate${results.length !== 1 ? 's' : ''} · ranked by absolute job-fit score`;
+  let meta = `${results.length} candidate${results.length !== 1 ? 's' : ''} · ranked by absolute job-fit score`;
+  if (flaggedCount) meta += ` · ⚑ ${flaggedCount} flagged`;
+  document.getElementById('resultsSub').textContent = meta;
 }
 
-function buildCard(r, fileName, rank) {
+function buildCard(r, fileName, rank, negHits) {
   const scoreClass = r.score >= 70 ? 'score-high' : r.score >= 45 ? 'score-mid' : 'score-low';
   const rankClass  = rank <= 3 ? `rank-${rank}` : '';
   const medal      = rank === 1 ? '🥇 #1' : rank === 2 ? '🥈 #2' : rank === 3 ? '🥉 #3' : `#${rank}`;
+  const hasFlagClass = negHits && negHits.length ? 'has-neg-kw' : '';
 
   const matchedTags = (r.matched_skills || []).slice(0, 6).map(s =>
     `<span class="tag">${s}</span>`).join('');
   const gapTags = (r.gaps || []).slice(0, 4).map(s =>
     `<span class="tag gap">${s}</span>`).join('');
 
+  // Negative keyword alert in header
+  const negAlertHTML = negHits && negHits.length
+    ? `<div class="neg-kw-alert">
+        <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        ${negHits.length} flag${negHits.length > 1 ? 's' : ''}
+       </div>`
+    : '';
+
+  // Negative keyword hits section in body
+  const negKwBodyHTML = negHits && negHits.length
+    ? `<div class="neg-kw-section">
+        <div class="neg-kw-section-label">
+          <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Negative keywords found in resume
+        </div>
+        <div class="tag-row">
+          ${negHits.map(kw => `<span class="tag neg-hit">${kw}</span>`).join('')}
+        </div>
+       </div>`
+    : '';
+
   const card = document.createElement('div');
-  card.className = `result-card ${rankClass}`;
+  card.className = `result-card ${rankClass} ${hasFlagClass}`;
   card.style.animationDelay = (rank * 0.05) + 's';
 
   card.innerHTML = `
@@ -861,6 +1063,7 @@ function buildCard(r, fileName, rank) {
         <div class="candidate-name">${r.name || 'Unknown'}</div>
         <div class="candidate-file">${fileName}</div>
       </div>
+      ${negAlertHTML}
       <div class="score-badge ${scoreClass}">
         <div class="score-value">${r.score}</div>
         <div class="score-label">/ 100</div>
@@ -881,6 +1084,7 @@ function buildCard(r, fileName, rank) {
           ${gapTags}
         </div>` : ''}
       </div>
+      ${negKwBodyHTML}
     </div>`;
   return card;
 }
@@ -899,7 +1103,7 @@ function metricBlock(label, value, max) {
 
 function exportCSV() {
   if (!results.length) return;
-  const header = ['Rank','Name','File','Score','Skills','Experience','Education','Presentation','Matched Skills','Gaps','Summary'];
+  const header = ['Rank','Name','File','Score','Skills','Experience','Education','Presentation','Matched Skills','Gaps','Flagged Keywords','Summary'];
   const rows   = results.map((r, i) => [
     i + 1,
     `"${(r.name || '').replace(/"/g,'""')}"`,
@@ -911,6 +1115,7 @@ function exportCSV() {
     r.presentation,
     `"${(r.matched_skills || []).join(', ').replace(/"/g,'""')}"`,
     `"${(r.gaps || []).join(', ').replace(/"/g,'""')}"`,
+    `"${(r.negHits || []).join(', ').replace(/"/g,'""')}"`,
     `"${(r.summary || '').replace(/"/g,'""')}"`
   ]);
 
@@ -937,3 +1142,5 @@ function clearAll() {
 </script>
 </body>
 </html>
+
+
